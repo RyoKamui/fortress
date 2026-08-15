@@ -115,33 +115,15 @@ jobs:
           - os: windows-2025
             target: x86_64-pc-windows-msvc
             artifact_path: target/x86_64-pc-windows-msvc/release/fortress.exe
-            artifact_name: fortress-windows-x86_64-bin
-            package_artifact_name: fortress-windows-x86_64
-            package_archive: fortress-windows-x86_64.zip
+            package_archive: Fortress-Windows.zip
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_path: target/x86_64-unknown-linux-gnu/release/fortress
-            artifact_name: fortress-linux-x86_64-bin
-            package_artifact_name: fortress-linux-x86_64
-            package_archive: fortress-linux-x86_64.tar.gz
+            package_archive: Fortress-Linux-Intel-AMD.tar.gz
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             artifact_path: target/aarch64-unknown-linux-gnu/release/fortress
-            artifact_name: fortress-linux-aarch64-bin
-            package_artifact_name: fortress-linux-aarch64
-            package_archive: fortress-linux-aarch64.tar.gz
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            artifact_path: target/aarch64-apple-darwin/release/fortress
-            artifact_name: fortress-core-macos-aarch64-bin
-            package_artifact_name: fortress-macos-aarch64
-            package_archive: fortress-macos-aarch64.zip
-          - os: macos-15-intel
-            target: x86_64-apple-darwin
-            artifact_path: target/x86_64-apple-darwin/release/fortress
-            artifact_name: fortress-core-macos-x86_64-bin
-            package_artifact_name: fortress-macos-x86_64
-            package_archive: fortress-macos-x86_64.zip
+            package_archive: Fortress-Linux-ARM.tar.gz
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout Repository
@@ -159,7 +141,7 @@ jobs:
       - name: Set Up Rust Toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
         with:
-          target: ${{ matrix.target }}
+          targets: ${{ matrix.target }}
 
       - name: Install Linux GUI Build Dependencies
         if: runner.os == 'Linux'
@@ -200,15 +182,90 @@ jobs:
       - name: Run Tests
         run: bash scripts/cargo-sanitized.sh test --locked --verbose
 
+      - name: Package Linux AppDir
+        if: runner.os == 'Linux'
+        run: |
+          bash scripts/package-linux.sh "${{ matrix.artifact_path }}" "Fortress.AppDir"
+          tar -czf "${{ matrix.package_archive }}" "Fortress.AppDir"
+
+      - name: Package Windows App
+        if: runner.os == 'Windows'
+        shell: bash
+        run: bash scripts/package-windows.sh "${{ matrix.artifact_path }}" "Fortress Windows"
+
+      - name: Archive Windows App
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -LiteralPath 'Fortress Windows' -DestinationPath '${{ matrix.package_archive }}' -Force
+
+      - name: Check Binary Path Leaks
+        if: runner.os != 'Windows'
+        run: bash scripts/check-binary-paths.sh "${{ matrix.artifact_path }}"
+
+      - name: Upload Ready-to-Use Package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          path: ${{ matrix.package_archive }}
+          if-no-files-found: error
+          archive: false
+
+  build-macos:
+    needs: resolve-age
+    if: needs.resolve-age.outputs.should_build == 'true'
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+      - name: Apply Resolved age Pin
+        env:
+          RESOLVED_AGE_VERSION: ${{ needs.resolve-age.outputs.version }}
+          RESOLVED_AGE_CHECKSUMS: ${{ needs.resolve-age.outputs.checksums }}
+        run: |
+          printf '%s\n' "$RESOLVED_AGE_VERSION" > AGE_VERSION
+          printf '%s\n' "$RESOLVED_AGE_CHECKSUMS" > AGE_CHECKSUMS
+
+      - name: Set Up Rust Toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache Cargo Registry
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.cargo/registry
+          key: macos-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache Cargo Build
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            target
+            ~/.cargo/git
+          key: macos-universal-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Check Formatting
+        run: bash scripts/cargo-sanitized.sh fmt --check
+
+      - name: Run Clippy
+        run: bash scripts/cargo-sanitized.sh clippy --locked --all-targets -- -D warnings
+
+      - name: Build Both Mac Architectures
+        run: |
+          bash scripts/cargo-sanitized.sh build --release --locked --target aarch64-apple-darwin
+          bash scripts/cargo-sanitized.sh build --release --locked --target x86_64-apple-darwin
+
+      - name: Run Tests
+        run: bash scripts/cargo-sanitized.sh test --locked --verbose
+
       - name: Configure macOS Developer ID Signing
-        if: runner.os == 'macOS'
         env:
           APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_DEVELOPER_ID_APPLICATION: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
         run: |
           if [[ -z "$APPLE_CERTIFICATE_P12" || -z "$APPLE_DEVELOPER_ID_APPLICATION" ]]; then
-            echo "Apple signing secrets are not configured; producing an ad-hoc signed development artifact."
+            echo "Apple signing secrets are not configured; producing an ad-hoc signed development app."
             exit 0
           fi
           keychain="$RUNNER_TEMP/fortress-signing.keychain-db"
@@ -223,102 +280,47 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain"
           echo "FORTRESS_CODESIGN_IDENTITY=$APPLE_DEVELOPER_ID_APPLICATION" >> "$GITHUB_ENV"
 
-      - name: Package Linux AppDir
-        if: runner.os == 'Linux'
+      - name: Create Universal Fortress.app
         run: |
-          bash scripts/package-linux.sh "${{ matrix.artifact_path }}" "Fortress.AppDir"
-          tar -czf "${{ matrix.package_archive }}" "Fortress.AppDir"
+          bash scripts/package-macos-universal.sh \
+            target/aarch64-apple-darwin/release/fortress \
+            target/x86_64-apple-darwin/release/fortress \
+            Fortress.app
 
-      - name: Package macOS App
-        if: runner.os == 'macOS'
-        run: bash scripts/package-macos.sh "${{ matrix.artifact_path }}" "Fortress.app"
-
-      - name: Notarize macOS App
-        if: runner.os == 'macOS'
+      - name: Notarize Fortress.app
         env:
           APPLE_NOTARY_ID: ${{ secrets.APPLE_NOTARY_ID }}
           APPLE_NOTARY_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          if [[ -z "$FORTRESS_CODESIGN_IDENTITY" || -z "$APPLE_NOTARY_ID" || -z "$APPLE_NOTARY_PASSWORD" || -z "$APPLE_TEAM_ID" ]]; then
+          if [[ -z "${FORTRESS_CODESIGN_IDENTITY:-}" || -z "$APPLE_NOTARY_ID" || -z "$APPLE_NOTARY_PASSWORD" || -z "$APPLE_TEAM_ID" ]]; then
             echo "Apple notarization secrets are not configured; skipping notarization."
             exit 0
           fi
           submission="$RUNNER_TEMP/fortress-notary.zip"
-          ditto -c -k --sequesterRsrc --keepParent "Fortress.app" "$submission"
+          ditto -c -k --sequesterRsrc --keepParent Fortress.app "$submission"
           xcrun notarytool submit "$submission" --wait \
             --apple-id "$APPLE_NOTARY_ID" \
             --password "$APPLE_NOTARY_PASSWORD" \
             --team-id "$APPLE_TEAM_ID"
-          xcrun stapler staple "Fortress.app"
-          xcrun stapler validate "Fortress.app"
+          xcrun stapler staple Fortress.app
+          xcrun stapler validate Fortress.app
 
-      - name: Archive macOS App
-        if: runner.os == 'macOS'
-        run: ditto -c -k --sequesterRsrc --keepParent "Fortress.app" "${{ matrix.package_archive }}"
-
-      - name: Package Windows App
-        if: runner.os == 'Windows'
-        shell: bash
-        run: bash scripts/package-windows.sh "${{ matrix.artifact_path }}" "Fortress Windows"
-
-      - name: Archive Windows App
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: Compress-Archive -LiteralPath 'Fortress Windows' -DestinationPath '${{ matrix.package_archive }}' -Force
-
-      - name: Check Binary Path Leaks
-        if: runner.os != 'Windows'
+      - name: Verify and Archive Fortress.app
         run: |
-          if [[ "$RUNNER_OS" == "macOS" ]]; then
-            bash scripts/check-binary-paths.sh \
-              "${{ matrix.artifact_path }}" \
-              "Fortress.app/Contents/MacOS/Fortress" \
-              "Fortress.app/Contents/MacOS/fortress-core" \
-              "Fortress.app/Contents/MacOS/age" \
-              "Fortress.app/Contents/MacOS/age-keygen"
-          else
-            bash scripts/check-binary-paths.sh "${{ matrix.artifact_path }}"
-          fi
+          bash scripts/check-binary-paths.sh \
+            Fortress.app/Contents/MacOS/Fortress \
+            Fortress.app/Contents/MacOS/fortress-core \
+            Fortress.app/Contents/MacOS/age \
+            Fortress.app/Contents/MacOS/age-keygen
+          ditto -c -k --sequesterRsrc --keepParent Fortress.app Fortress-macOS.zip
 
-      - name: Upload Binary Artifact
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - name: Upload Fortress for macOS
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_path }}
-          if-no-files-found: warn
-          compression-level: 6
-          overwrite: true
-
-      - name: Upload Linux AppDir Artifact
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: ${{ matrix.package_artifact_name }}
-          path: ${{ matrix.package_archive }}
+          path: Fortress-macOS.zip
           if-no-files-found: error
-          compression-level: 6
-          overwrite: true
-
-      - name: Upload macOS App Artifact
-        if: runner.os == 'macOS'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: ${{ matrix.package_artifact_name }}
-          path: ${{ matrix.package_archive }}
-          if-no-files-found: error
-          compression-level: 6
-          overwrite: true
-
-      - name: Upload Windows App Artifact
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: ${{ matrix.package_artifact_name }}
-          path: ${{ matrix.package_archive }}
-          if-no-files-found: error
-          compression-level: 6
-          overwrite: true
+          archive: false
 
   security-audit:
     runs-on: ubuntu-latest

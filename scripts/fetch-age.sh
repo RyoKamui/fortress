@@ -131,8 +131,15 @@ if [[ ! -x "$bundle_dir/$executable_name" ]] \
 fi
 
 host_system="$(uname -s)"
-case "$release_os:$host_system" in
-  darwin:Darwin | linux:Linux | windows:MINGW* | windows:MSYS* | windows:CYGWIN*)
+host_arch="$(uname -m)"
+case "$release_os:$release_arch:$host_system:$host_arch" in
+  darwin:arm64:Darwin:arm64 \
+    | darwin:amd64:Darwin:x86_64 \
+    | linux:arm64:Linux:aarch64 \
+    | linux:amd64:Linux:x86_64 \
+    | windows:amd64:MINGW*:x86_64 \
+    | windows:amd64:MSYS*:x86_64 \
+    | windows:amd64:CYGWIN*:x86_64)
     "$bundle_dir/$executable_name" --version >&2
     "$bundle_dir/$keygen_name" --version >&2
     ;;

@@ -8,11 +8,11 @@ cd "$repo_root"
 bin_name="fortress"
 app_name="Fortress"
 mac_app_path="target/release/$app_name.app"
-mac_current_zip="target/release/fortress-macos.zip"
+mac_current_zip="target/release/Fortress-macOS.zip"
 linux_appdir_path="target/release/$app_name.AppDir"
-linux_appdir_tarball="target/release/fortress-linux.tar.gz"
+linux_appdir_tarball="target/release/Fortress-Linux.tar.gz"
 windows_package_path="target/release/$app_name Windows"
-windows_package_zip="target/release/fortress-windows.zip"
+windows_package_zip="target/release/Fortress-Windows.zip"
 
 host_os() {
   case "$(uname -s)" in

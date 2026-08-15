@@ -4,6 +4,16 @@ Fortress is a desktop app for creating and recovering encrypted BIP-39 seed back
 
 It can generate a mnemonic, encrypt backup JSON with `age`, split recovery material with SSKR, open existing encrypted backups, recover SSKR shares, and derive public wallet addresses for Bitcoin, Ethereum, XRP, and Solana. It is not a wallet and does not keep a persistent secret store.
 
+## Install on macOS
+
+Download **`Fortress-macOS.zip`**. There is only one Mac download; it works on both Apple Silicon and Intel Macs.
+
+1. Double-click `Fortress-macOS.zip` to reveal `Fortress.app`.
+2. Drag `Fortress.app` into your `/Applications` folder.
+3. Open Fortress from Applications like any other Mac app.
+
+Files named `bin`, `aarch64`, `x86_64`, or `fortress-core` are developer build parts, not applications. They are no longer published as user downloads.
+
 ## Platform Architecture
 
 - macOS uses a native SwiftUI/AppKit interface with standard macOS controls, menus, dialogs, accessibility behavior, appearance adaptation, and window management.
@@ -41,9 +51,9 @@ scripts/build-release.sh check
 
 Platform outputs:
 
-- macOS: `target/release/Fortress.app` and `target/release/fortress-macos.zip`
-- Linux: `target/release/Fortress.AppDir` and `target/release/fortress-linux.tar.gz`
-- Windows: `target\release\Fortress Windows` and `target\release\fortress-windows.zip`
+- macOS: `target/release/Fortress.app` and `target/release/Fortress-macOS.zip`
+- Linux: `target/release/Fortress.AppDir` and `target/release/Fortress-Linux.tar.gz`
+- Windows: `target\release\Fortress Windows` and `target\release\Fortress-Windows.zip`
 
 The macOS zip is only for release/upload/sharing. For local use, open the app bundle directly:
 
@@ -79,10 +89,12 @@ Raw `cargo build --release` without path-remap rustflags is blocked unless `FORT
 
 GitHub Actions builds native artifacts on each OS:
 
-- `fortress-macos-aarch64` and `fortress-macos-x86_64`: Apple Silicon and Intel macOS app bundle zips
-- `fortress-linux-aarch64` and `fortress-linux-x86_64`: ARM64 and x86-64 Linux AppDir tarballs
-- `fortress-windows-x86_64`: x86-64 Windows GUI package zip
-- raw egui binaries for Linux and Windows, and raw Rust core binaries for macOS, are also uploaded for debugging
+- `Fortress-macOS.zip`: one universal `Fortress.app` for every supported Mac
+- `Fortress-Windows.zip`: the Windows application package
+- `Fortress-Linux-Intel-AMD.tar.gz`: Linux package for ordinary Intel/AMD PCs
+- `Fortress-Linux-ARM.tar.gz`: Linux package for ARM computers
+
+Only ready-to-use application packages are uploaded. Raw binaries and internal Mac architecture builds are not presented as downloads.
 
 macOS CI supports Developer ID signing and notarization when the repository provides `APPLE_CERTIFICATE_P12`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_DEVELOPER_ID_APPLICATION`, `APPLE_NOTARY_ID`, `APPLE_NOTARY_PASSWORD`, and `APPLE_TEAM_ID` secrets. Without them, development artifacts are ad-hoc signed and are not suitable for public Gatekeeper distribution.
 
