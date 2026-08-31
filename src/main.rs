@@ -2463,9 +2463,7 @@ impl Drop for MouseEntropyCollector {
         self.covered_cells = 0;
         self.direction_changes = 0;
         self.speed_buckets = 0;
-        for position in &mut self.trail {
-            *position = egui::Pos2::ZERO;
-        }
+        self.trail.fill(egui::Pos2::ZERO);
         self.trail.clear();
     }
 }
